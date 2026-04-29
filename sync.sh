@@ -58,7 +58,7 @@ sleep 2
 # -------- 获取并解包 CKB --------
 ckb_version=$(
 	curl -s https://api.github.com/repos/nervosnetwork/ckb/releases |
-		jq -r '.[] | select(.tag_name | startswith("v0.205")) |
+		jq -r '.[] | select(.tag_name | startswith("v0.206")) |
       {tag_name, published_at} | "\(.published_at) \(.tag_name)"' |
 		sort | tail -n 1 | cut -d " " -f2
 )
