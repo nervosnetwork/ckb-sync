@@ -87,6 +87,9 @@ else
 	mv "ckb_${ckb_version}_x86_64-unknown-linux-gnu" "testnet_ckb_${ckb_version}_x86_64-unknown-linux-gnu"
 fi
 
+# 如需让同步测试跑当前目录上一级的本地 ckb 二进制，取消下面这行注释。
+# cp ../ckb "${LABEL}_ckb_${ckb_version}_x86_64-unknown-linux-gnu/ckb"
+
 # -------- 测试报告result文件名逻辑 --------
 start_day=$(TZ='Asia/Shanghai' date "+%Y-%m-%d")
 if [[ "$RESTART_FLAG" == "0" ]]; then
