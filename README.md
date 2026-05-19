@@ -5,6 +5,28 @@
 # Statistics are collected every 20 minutes.
 10,30,50 * * * * cd /home/ckb/scz/ckb-sync && sudo bash get_diff.sh >> get_diff.log 2>&1
 ```
+
+## Windows rough version
+```powershell
+# Start mainnet, without restart report.
+powershell -ExecutionPolicy Bypass -File .\sync.ps1 main 0
+
+# Start testnet, restart report.
+powershell -ExecutionPolicy Bypass -File .\sync.ps1 test 1
+
+# Collect sync diff and send report when ready.
+powershell -ExecutionPolicy Bypass -File .\get_diff.ps1
+```
+
+The Windows report reuses `sendMsg.py` and the same `.env` / `.without_restart_env` files.
+It includes `platform: Windows (PowerShell)` near the top of the report.
+Grafana links detect the metrics host from `https://ifconfig.me/ip` by default.
+Override it with `CKB_SYNC_METRICS_HOST` or the optional script argument when needed:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\sync.ps1 main 0 47.131.93.120
+powershell -ExecutionPolicy Bypass -File .\get_diff.ps1 47.131.93.120
+```
+
 ## Instructions
 Python3 and packages such as discord and python-dotenv need to be installed on the server for testing synchronization.
 ```bash
