@@ -112,7 +112,8 @@ function Start-MetricsProxy {
         $args += @(
             $proxyScript,
             "--listen-port", "$PublicPort",
-            "--upstream", "http://127.0.0.1:$LocalPort"
+            "--upstream", "http://127.0.0.1:$LocalPort",
+            "--log-file", (Join-Path $PSScriptRoot "metrics_proxy_${PublicPort}.log")
         )
 
         Start-Process -FilePath $python.Source -ArgumentList $args -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
