@@ -127,7 +127,7 @@ target = { type = "prometheus", listen_address = "0.0.0.0:$MetricsPort" }
 interval = 5
 "@
 
-    if ($content -notmatch '\[metrics\.exporter\.prometheus\]') {
+    if ($content -notmatch '(?m)^\s*\[metrics\.exporter\.prometheus\]') {
         $content = $content.TrimEnd() + "`r`n" + $extraConfig + "`r`n"
     }
 
