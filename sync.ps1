@@ -63,6 +63,31 @@ function Stop-CkbByPort {
     }
 }
 
+function Set-MetricsPortProxy {
+    param(
+        [int]$PublicPort,
+        [int]$LocalPort
+    )
+
+    try {
+        netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$PublicPort | Out-Null
+        netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$PublicPort connectaddress=127.0.0.1 connectport=$LocalPort | Out-Null
+
+        $ruleName = "CKB Prometheus Metrics $PublicPort"
+        if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
+            New-NetFirewallRule `
+                -DisplayName $ruleName `
+                -Direction Inbound `
+                -Action Allow `
+                -Protocol TCP `
+                -LocalPort $PublicPort | Out-Null
+        }
+    }
+    catch {
+        Write-Warning "Cannot configure portproxy for metrics port $PublicPort. Run PowerShell as Administrator or configure it manually."
+    }
+}
+
 function Get-LatestCkbRelease {
     $releases = Invoke-RestMethod `
         -Uri "https://api.github.com/repos/nervosnetwork/ckb/releases" `
@@ -104,6 +129,7 @@ function Update-CkbToml {
         [string]$Path,
         [int]$RpcPort,
         [int]$MetricsPort,
+        [int]$MetricsLocalPort,
         [bool]$IsTestnet
     )
 
@@ -119,7 +145,7 @@ function Update-CkbToml {
     $extraConfig = @"
 
 [metrics.exporter.prometheus]
-target = { type = "prometheus", listen_address = "0.0.0.0:$MetricsPort" }
+target = { type = "prometheus", listen_address = "127.0.0.1:$MetricsLocalPort" }
 
 # Experimental: Monitor memory changes.
 [memory_tracker]
@@ -154,12 +180,14 @@ if ($Net -eq "main") {
     $Label = "mainnet"
     $RpcPort = 8114
     $MetricsPort = 8100
+    $MetricsLocalPort = 18100
     $AssumeValidTarget = $MainnetAssumeValidTarget
 }
 else {
     $Label = "testnet"
     $RpcPort = 8124
     $MetricsPort = 8102
+    $MetricsLocalPort = 18102
     $AssumeValidTarget = $TestnetAssumeValidTarget
 }
 
@@ -233,11 +261,13 @@ try {
         Add-Content -LiteralPath (Join-Path (Split-Path (Get-Location) -Parent) $resultLog) -Value $specName
     }
 
-    Update-CkbToml -Path $tomlPath -RpcPort $RpcPort -MetricsPort $MetricsPort -IsTestnet:($Net -eq "test")
+    Update-CkbToml -Path $tomlPath -RpcPort $RpcPort -MetricsPort $MetricsPort -MetricsLocalPort $MetricsLocalPort -IsTestnet:($Net -eq "test")
 }
 finally {
     Pop-Location
 }
+
+Set-MetricsPortProxy -PublicPort $MetricsPort -LocalPort $MetricsLocalPort
 
 Add-Content -LiteralPath $resultLog -Value "rich-indexer type: Not Enabled"
 
