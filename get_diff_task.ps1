@@ -32,7 +32,8 @@ try {
         Write-TaskLog "$line"
     }
 
-    Write-TaskLog "done exit=$LASTEXITCODE"
+    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    Write-TaskLog "done exit=$exitCode"
     exit 0
 }
 catch {
