@@ -1,0 +1,129 @@
+$ErrorActionPreference = "Stop"
+
+$PortMainnet = 8114
+$PortTestnet = 8124
+
+function Get-NowText {
+    return (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+}
+
+function Stop-CkbByPort {
+    param(
+        [int]$Port,
+        [string]$Label
+    )
+
+    $pids = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+
+    if (-not $pids) {
+        Write-Host "$(Get-NowText) no process found on $Label port $Port"
+        return
+    }
+
+    foreach ($pidValue in $pids) {
+        if ($pidValue -and $pidValue -gt 0) {
+            Write-Host "$(Get-NowText) killed the $Label ckb $pidValue"
+            Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Start-ExistingCkb {
+    param(
+        [string]$Prefix,
+        [string]$Label
+    )
+
+    $dir = Get-ChildItem -Directory -Filter "${Prefix}_ckb_*_x86_64-pc-windows-msvc" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if (-not $dir) {
+        throw "Cannot find existing $Label CKB directory"
+    }
+
+    $ckbExe = Join-Path $dir.FullName "ckb.exe"
+    if (-not (Test-Path -LiteralPath $ckbExe)) {
+        throw "Cannot find $ckbExe"
+    }
+
+    Write-Host "$(Get-NowText) restart $Label ckb from $($dir.Name)"
+    Start-Process -FilePath $ckbExe -ArgumentList @("run") -WorkingDirectory $dir.FullName -WindowStyle Hidden
+}
+
+function Set-EnvState {
+    param(
+        [string]$Mode,
+        [string]$IsExec
+    )
+
+    Set-Content -LiteralPath "env.txt" -Encoding ASCII -Value @($Mode, $IsExec)
+}
+
+if (-not (Test-Path -LiteralPath "env.txt")) {
+    Set-EnvState -Mode "1" -IsExec "1"
+    Write-Host "[info] env.txt not found, created with default values:"
+    Get-Content -LiteralPath "env.txt"
+}
+
+$envLines = @(Get-Content -LiteralPath "env.txt")
+$mode = if ($envLines.Count -ge 1) { $envLines[0].Trim() } else { "1" }
+$isExec = if ($envLines.Count -ge 2) { $envLines[1].Trim() } else { "1" }
+$currentTime = Get-NowText
+
+if ($isExec -eq "0") {
+    switch ($mode) {
+        { $_ -in @("1", "2") } {
+            Write-Host "$currentTime No restart for ckb in this test round"
+            exit 0
+        }
+        "3" {
+            Stop-CkbByPort -Port $PortMainnet -Label "mainnet"
+            Stop-CkbByPort -Port $PortTestnet -Label "testnet"
+            Start-Sleep -Seconds 180
+            Start-ExistingCkb -Prefix "mainnet" -Label "mainnet"
+            exit 0
+        }
+        "4" {
+            Stop-CkbByPort -Port $PortMainnet -Label "mainnet"
+            Stop-CkbByPort -Port $PortTestnet -Label "testnet"
+            Start-Sleep -Seconds 180
+            Start-ExistingCkb -Prefix "testnet" -Label "testnet"
+            exit 0
+        }
+        default {
+            Write-Host "$currentTime Invalid mode: $mode (should be 1~4)"
+            exit 1
+        }
+    }
+}
+
+Stop-CkbByPort -Port $PortMainnet -Label "mainnet"
+Stop-CkbByPort -Port $PortTestnet -Label "testnet"
+
+switch ($mode) {
+    "1" {
+        Write-Host "$currentTime Run mode=1 -> .\sync.ps1 main 0"
+        & .\sync.ps1 main 0
+    }
+    "2" {
+        Write-Host "$currentTime Run mode=2 -> .\sync.ps1 test 0"
+        & .\sync.ps1 test 0
+    }
+    "3" {
+        Write-Host "$currentTime Run mode=3 -> .\sync.ps1 main 1"
+        & .\sync.ps1 main 1
+    }
+    "4" {
+        Write-Host "$currentTime Run mode=4 -> .\sync.ps1 test 1"
+        & .\sync.ps1 test 1
+    }
+    default {
+        Write-Host "$currentTime Invalid mode: $mode (should be 1~4)"
+        exit 1
+    }
+}
+
+Set-EnvState -Mode $mode -IsExec "0"
+Write-Host "[info] Updated env.txt -> set is_exec to 0"

@@ -18,6 +18,10 @@ powershell -ExecutionPolicy Bypass -File .\sync.ps1 test 1
 powershell -ExecutionPolicy Bypass -File .\get_diff.ps1
 ```
 
+For scheduled Windows runs, use `run.ps1` instead of calling `sync.ps1` directly.
+`run.ps1` follows `env.txt` like the Linux `run.sh`: mode `1`/`2` starts a without-restart round once, then later timer runs do nothing until `get_diff.ps1` advances `env.txt`.
+Mode `3`/`4` performs restart rounds.
+
 The Windows report reuses `sendMsg.py` and the same `.env` / `.without_restart_env` files.
 It includes `platform: Windows (PowerShell)` near the top of the report.
 Grafana links detect the metrics host from `https://ifconfig.me/ip` by default.
