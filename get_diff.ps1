@@ -114,6 +114,25 @@ function Get-SyncSnapshot {
     return [pscustomobject]$snapshot
 }
 
+function Write-SyncSnapshot {
+    param(
+        [object]$Snapshot,
+        [string]$DiffLog
+    )
+
+    if ($null -eq $Snapshot.Height -or $null -eq $Snapshot.IndexerTip) {
+        return
+    }
+
+    $latestLabel = if ($Snapshot.Label -eq "testnet") { "testnet_height" } else { "mainnet_height" }
+    if ($null -eq $Snapshot.LatestHeight) {
+        Add-Content -LiteralPath $DiffLog -Value "$(Get-NowText) height: $($Snapshot.Height) indexer_tip: $($Snapshot.IndexerTip) ${latestLabel}: fetch_failed difference: fetch_failed height_sync_rate: fetch_failed sync_rate: fetch_failed"
+        return
+    }
+
+    Add-Content -LiteralPath $DiffLog -Value "$(Get-NowText) height: $($Snapshot.Height) indexer_tip: $($Snapshot.IndexerTip) ${latestLabel}: $($Snapshot.LatestHeight) difference: $($Snapshot.Difference) height_sync_rate: $($Snapshot.HeightSyncRate) sync_rate: $($Snapshot.SyncRate)"
+}
+
 function Find-LatestResultLog {
     $logs = Get-ChildItem -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '^(without_restart_result_|result_)\d{4}-\d{2}-\d{2}\.log$' } |
@@ -311,14 +330,10 @@ $currentDay = (Get-Date).ToString("yyyy-MM-dd")
 $diffLog = "diff_${currentDay}.log"
 
 $main = Get-SyncSnapshot -Label "mainnet" -LocalUrl "http://localhost:8114" -RemoteUrl "https://mainnet.ckbapp.dev"
-if ($null -ne $main.Height -and $null -ne $main.IndexerTip) {
-    Add-Content -LiteralPath $diffLog -Value "$(Get-NowText) height: $($main.Height) indexer_tip: $($main.IndexerTip) mainnet_height: $($main.LatestHeight) difference: $($main.Difference) height_sync_rate: $($main.HeightSyncRate) sync_rate: $($main.SyncRate)"
-}
+Write-SyncSnapshot -Snapshot $main -DiffLog $diffLog
 
 $test = Get-SyncSnapshot -Label "testnet" -LocalUrl "http://localhost:8124" -RemoteUrl "https://testnet.ckbapp.dev"
-if ($null -ne $test.Height -and $null -ne $test.IndexerTip) {
-    Add-Content -LiteralPath $diffLog -Value "$(Get-NowText) height: $($test.Height) indexer_tip: $($test.IndexerTip) testnet_height: $($test.LatestHeight) difference: $($test.Difference) height_sync_rate: $($test.HeightSyncRate) sync_rate: $($test.SyncRate)"
-}
+Write-SyncSnapshot -Snapshot $test -DiffLog $diffLog
 
 $resultLogFile = Find-LatestResultLog
 if ($resultLogFile) {
