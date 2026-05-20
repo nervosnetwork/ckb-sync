@@ -1,6 +1,13 @@
 param(
     [Parameter(Mandatory = $false, Position = 0)]
-    [string]$MetricsHost = $env:CKB_SYNC_METRICS_HOST
+    [string]$MetricsHost = $env:CKB_SYNC_METRICS_HOST,
+
+    [Parameter(Mandatory = $false, Position = 1)]
+    [ValidateSet("all", "main", "test")]
+    [string]$Net = "all",
+
+    [Parameter(Mandatory = $false)]
+    [int]$RpcTimeoutSec = 5
 )
 
 $ErrorActionPreference = "Continue"
@@ -45,7 +52,7 @@ function Invoke-CkbRpc {
     } | ConvertTo-Json -Compress
 
     try {
-        return Invoke-RestMethod -Uri $Url -Method Post -ContentType "application/json" -Body $body -TimeoutSec 15
+        return Invoke-RestMethod -Uri $Url -Method Post -ContentType "application/json" -Body $body -TimeoutSec $RpcTimeoutSec
     }
     catch {
         return $null
@@ -329,16 +336,27 @@ function Stop-AfterSyncEndWindow {
 $currentDay = (Get-Date).ToString("yyyy-MM-dd")
 $diffLog = "diff_${currentDay}.log"
 
-$main = Get-SyncSnapshot -Label "mainnet" -LocalUrl "http://localhost:8114" -RemoteUrl "https://mainnet.ckbapp.dev"
-Write-SyncSnapshot -Snapshot $main -DiffLog $diffLog
+$main = $null
+if ($Net -in @("all", "main")) {
+    $main = Get-SyncSnapshot -Label "mainnet" -LocalUrl "http://localhost:8114" -RemoteUrl "https://mainnet.ckbapp.dev"
+    Write-SyncSnapshot -Snapshot $main -DiffLog $diffLog
+}
 
-$test = Get-SyncSnapshot -Label "testnet" -LocalUrl "http://localhost:8124" -RemoteUrl "https://testnet.ckbapp.dev"
-Write-SyncSnapshot -Snapshot $test -DiffLog $diffLog
+$test = $null
+if ($Net -in @("all", "test")) {
+    $test = Get-SyncSnapshot -Label "testnet" -LocalUrl "http://localhost:8124" -RemoteUrl "https://testnet.ckbapp.dev"
+    Write-SyncSnapshot -Snapshot $test -DiffLog $diffLog
+}
 
 $resultLogFile = Find-LatestResultLog
 if ($resultLogFile) {
-    Add-SyncEndIfReady -Net "mainnet" -Snapshot $main -LogPath $resultLogFile.FullName
-    Add-SyncEndIfReady -Net "testnet" -Snapshot $test -LogPath $resultLogFile.FullName
-    Stop-AfterSyncEndWindow -Net "mainnet" -Snapshot $main -LogPath $resultLogFile.FullName -Port 8114 -MetricsPort 8100 -MetricsHost $MetricsHost
-    Stop-AfterSyncEndWindow -Net "testnet" -Snapshot $test -LogPath $resultLogFile.FullName -Port 8124 -MetricsPort 8102 -MetricsHost $MetricsHost
+    if ($main) {
+        Add-SyncEndIfReady -Net "mainnet" -Snapshot $main -LogPath $resultLogFile.FullName
+        Stop-AfterSyncEndWindow -Net "mainnet" -Snapshot $main -LogPath $resultLogFile.FullName -Port 8114 -MetricsPort 8100 -MetricsHost $MetricsHost
+    }
+
+    if ($test) {
+        Add-SyncEndIfReady -Net "testnet" -Snapshot $test -LogPath $resultLogFile.FullName
+        Stop-AfterSyncEndWindow -Net "testnet" -Snapshot $test -LogPath $resultLogFile.FullName -Port 8124 -MetricsPort 8102 -MetricsHost $MetricsHost
+    }
 }
