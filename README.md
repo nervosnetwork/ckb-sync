@@ -21,6 +21,7 @@ powershell -ExecutionPolicy Bypass -File .\get_diff.ps1
 For scheduled Windows runs, use `run.ps1` instead of calling `sync.ps1` directly.
 `run.ps1` follows `env.txt` like the Linux `run.sh`: mode `1`/`2` starts a without-restart round once, then later timer runs do nothing until `get_diff.ps1` advances `env.txt`.
 Mode `3`/`4` performs restart rounds.
+For Windows Task Scheduler, prefer `get_diff_task.ps1` for diff collection because it wraps `get_diff.ps1` with task-friendly logging.
 
 The Windows report reuses `sendMsg.py` and the same `.env` / `.without_restart_env` files.
 It includes `platform: Windows (PowerShell)` near the top of the report.
