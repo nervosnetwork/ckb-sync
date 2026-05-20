@@ -327,8 +327,10 @@ function Stop-AfterSyncEndWindow {
     }
 
     $toMs = ([DateTimeOffset](Get-Date)).ToUnixTimeMilliseconds()
-    Add-Content -LiteralPath $LogPath -Value "metrics_target: ${MetricsHost}:$MetricsPort"
-    Add-Content -LiteralPath $LogPath -Value "Grafana: https://grafana-monitor.nervos.tech/d/pThsj6xVz/test?orgId=1&var-url=${MetricsHost}:$MetricsPort&from=$fromMs&to=$toMs"
+    $metricsTarget = "${MetricsHost}:$MetricsPort"
+    $grafanaUrl = "https://grafana-monitor.nervos.tech/d/pThsj6xVz/test?orgId=1&var-url=$metricsTarget&from=$fromMs&to=$toMs&var-query0=&refresh=auto&timezone=browser"
+    Add-Content -LiteralPath $LogPath -Value "metrics_target: $metricsTarget"
+    Add-Content -LiteralPath $LogPath -Value "Grafana: $grafanaUrl"
     Invoke-SendMessage -LogPath $LogPath
     Switch-EnvFile
 }
