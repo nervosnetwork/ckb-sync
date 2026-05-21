@@ -199,9 +199,9 @@ curl.exe -i http://127.0.0.1:8100
 The metrics port should be owned by `ckb.exe`, not a Python proxy:
 
 ```powershell
-$pid = (Get-NetTCPConnection -LocalPort 8100 -State Listen -ErrorAction SilentlyContinue |
+$metricsPid = (Get-NetTCPConnection -LocalPort 8100 -State Listen -ErrorAction SilentlyContinue |
   Select-Object -First 1 -ExpandProperty OwningProcess)
-Get-Process -Id $pid
+Get-Process -Id $metricsPid
 ```
 
 From another machine:
