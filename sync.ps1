@@ -63,63 +63,46 @@ function Stop-CkbByPort {
     }
 }
 
-function Start-MetricsProxy {
-    param(
-        [int]$PublicPort,
-        [int]$LocalPort
-    )
+function Clear-MetricsPort {
+    param([int]$Port)
 
     try {
-        netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$PublicPort | Out-Null
+        netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$Port | Out-Null
+    }
+    catch {
+        # It is fine when no old portproxy entry exists.
+    }
 
-        $oldPids = Get-NetTCPConnection -LocalPort $PublicPort -ErrorAction SilentlyContinue |
+    try {
+        $oldPids = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty OwningProcess -Unique
         foreach ($oldPid in $oldPids) {
             if ($oldPid -and $oldPid -gt 0 -and $oldPid -ne 4) {
                 Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue
             }
         }
+    }
+    catch {
+        Write-Warning "Cannot clear metrics port $Port. It may already be free."
+    }
+}
 
-        $ruleName = "CKB Prometheus Metrics $PublicPort"
+function Ensure-MetricsFirewallRule {
+    param([int]$Port)
+
+    try {
+        $ruleName = "CKB Prometheus Metrics $Port"
         if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
             New-NetFirewallRule `
                 -DisplayName $ruleName `
                 -Direction Inbound `
                 -Action Allow `
                 -Protocol TCP `
-                -LocalPort $PublicPort | Out-Null
+                -LocalPort $Port | Out-Null
         }
-
-        $python = Get-Command python -ErrorAction SilentlyContinue
-        if (-not $python) {
-            $python = Get-Command py -ErrorAction SilentlyContinue
-        }
-        if (-not $python) {
-            Write-Warning "Cannot find python or py. Metrics proxy was not started."
-            return
-        }
-
-        $proxyScript = Join-Path $PSScriptRoot "metrics_proxy.py"
-        if (-not (Test-Path -LiteralPath $proxyScript)) {
-            Write-Warning "Cannot find metrics_proxy.py. Metrics proxy was not started."
-            return
-        }
-
-        $args = @()
-        if ((Split-Path -Leaf $python.Source) -ieq "py.exe") {
-            $args += "-3"
-        }
-        $args += @(
-            $proxyScript,
-            "--listen-port", "$PublicPort",
-            "--upstream", "http://127.0.0.1:$LocalPort",
-            "--log-file", (Join-Path $PSScriptRoot "metrics_proxy_${PublicPort}.log")
-        )
-
-        Start-Process -FilePath $python.Source -ArgumentList $args -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
     }
     catch {
-        Write-Warning "Cannot start metrics proxy for port $PublicPort. Run PowerShell as Administrator or configure it manually."
+        Write-Warning "Cannot ensure firewall rule for metrics port $Port. Run PowerShell as Administrator or configure it manually."
     }
 }
 
@@ -164,7 +147,6 @@ function Update-CkbToml {
         [string]$Path,
         [int]$RpcPort,
         [int]$MetricsPort,
-        [int]$MetricsLocalPort,
         [bool]$IsTestnet
     )
 
@@ -180,7 +162,7 @@ function Update-CkbToml {
     $extraConfig = @"
 
 [metrics.exporter.prometheus]
-target = { type = "prometheus", listen_address = "127.0.0.1:$MetricsLocalPort" }
+target = { type = "prometheus", listen_address = "0.0.0.0:$MetricsPort" }
 
 # Experimental: Monitor memory changes.
 [memory_tracker]
@@ -188,7 +170,15 @@ target = { type = "prometheus", listen_address = "127.0.0.1:$MetricsLocalPort" }
 interval = 5
 "@
 
-    if ($content -notmatch '(?m)^\s*\[metrics\.exporter\.prometheus\]') {
+    $metricsTarget = "target = { type = `"prometheus`", listen_address = `"0.0.0.0:$MetricsPort`" }"
+    if ($content -match '(?m)^\s*\[metrics\.exporter\.prometheus\]') {
+        $content = [regex]::Replace(
+            $content,
+            '(?m)^\s*target\s*=\s*\{\s*type\s*=\s*"prometheus"\s*,\s*listen_address\s*=\s*"[^"]+"\s*\}\s*$',
+            $metricsTarget
+        )
+    }
+    else {
         $content = $content.TrimEnd() + "`r`n" + $extraConfig + "`r`n"
     }
 
@@ -215,20 +205,19 @@ if ($Net -eq "main") {
     $Label = "mainnet"
     $RpcPort = 8114
     $MetricsPort = 8100
-    $MetricsLocalPort = 18100
     $AssumeValidTarget = $MainnetAssumeValidTarget
 }
 else {
     $Label = "testnet"
     $RpcPort = 8124
     $MetricsPort = 8102
-    $MetricsLocalPort = 18102
     $AssumeValidTarget = $TestnetAssumeValidTarget
 }
 
 $MetricsHost = Resolve-MetricsHost -Value $MetricsHost
 
 Stop-CkbByPort -Port $RpcPort -Label $Label
+Clear-MetricsPort -Port $MetricsPort
 Start-Sleep -Seconds 2
 
 $release = Get-LatestCkbRelease
@@ -296,13 +285,13 @@ try {
         Add-Content -LiteralPath (Join-Path (Split-Path (Get-Location) -Parent) $resultLog) -Value $specName
     }
 
-    Update-CkbToml -Path $tomlPath -RpcPort $RpcPort -MetricsPort $MetricsPort -MetricsLocalPort $MetricsLocalPort -IsTestnet:($Net -eq "test")
+    Update-CkbToml -Path $tomlPath -RpcPort $RpcPort -MetricsPort $MetricsPort -IsTestnet:($Net -eq "test")
 }
 finally {
     Pop-Location
 }
 
-Start-MetricsProxy -PublicPort $MetricsPort -LocalPort $MetricsLocalPort
+Ensure-MetricsFirewallRule -Port $MetricsPort
 
 Add-Content -LiteralPath $resultLog -Value "rich-indexer type: Not Enabled"
 

@@ -123,18 +123,85 @@ Get-CimInstance Win32_Process |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 ```
 
-## Metrics checks
+## Migrate existing server to native metrics
 
-Local CKB metrics should be available on the internal metrics port:
+Use this when an old Windows node was started with the proxy-based metrics setup. It preserves the existing CKB data directory.
 
 ```powershell
-curl.exe -i http://127.0.0.1:18100
+cd C:\project\ckb-sync
+git pull
+
+# Stop helpers that may keep old settings or the old proxy alive.
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -like "*metrics_proxy.py*" -or $_.CommandLine -like "*get_diff_loop.ps1*" } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+# Stop CKB only; this does not delete any chain data.
+Stop-Process -Name ckb -Force -ErrorAction SilentlyContinue
+
+# Remove any old Windows portproxy entry for 8100.
+netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=8100
+
+# Point the existing mainnet ckb.toml at CKB's native public metrics port.
+$ckbDir = Get-ChildItem -Directory -Filter "mainnet_ckb_*_x86_64-pc-windows-msvc" |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
+
+if (-not $ckbDir) {
+  throw "Cannot find mainnet CKB directory"
+}
+
+$toml = Join-Path $ckbDir.FullName "ckb.toml"
+$content = Get-Content -LiteralPath $toml -Raw
+$target = 'target = { type = "prometheus", listen_address = "0.0.0.0:8100" }'
+
+if ($content -match '(?m)^\s*\[metrics\.exporter\.prometheus\]') {
+  $content = [regex]::Replace(
+    $content,
+    '(?m)^\s*target\s*=\s*\{\s*type\s*=\s*"prometheus"\s*,\s*listen_address\s*=\s*"[^"]+"\s*\}\s*$',
+    $target
+  )
+}
+else {
+  $content = $content.TrimEnd() + "`r`n`r`n[metrics.exporter.prometheus]`r`n$target`r`n"
+}
+
+Set-Content -LiteralPath $toml -Value $content -Encoding UTF8
+
+# Make sure Windows Firewall allows Prometheus to scrape 8100.
+if (-not (Get-NetFirewallRule -DisplayName "CKB Prometheus Metrics 8100" -ErrorAction SilentlyContinue)) {
+  New-NetFirewallRule -DisplayName "CKB Prometheus Metrics 8100" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8100
+}
+
+# Restart CKB from the existing data directory.
+Start-Process -FilePath "$($ckbDir.FullName)\ckb.exe" `
+  -ArgumentList "run" `
+  -WorkingDirectory $ckbDir.FullName `
+  -WindowStyle Hidden
+
+"1`n0" | Set-Content -Encoding ASCII C:\project\ckb-sync\env.txt
+
+# Restart the diff collector.
+Start-Process powershell.exe `
+  -ArgumentList "-NoLogo -NoProfile -ExecutionPolicy Bypass -File C:\project\ckb-sync\get_diff_loop.ps1 -Net main" `
+  -WorkingDirectory "C:\project\ckb-sync" `
+  -WindowStyle Hidden
 ```
 
-The Windows metrics proxy exposes the public scrape port:
+## Metrics checks
+
+CKB exposes Prometheus metrics directly on the public scrape port:
 
 ```powershell
 curl.exe -i http://127.0.0.1:8100
+```
+
+The metrics port should be owned by `ckb.exe`, not a Python proxy:
+
+```powershell
+$pid = (Get-NetTCPConnection -LocalPort 8100 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 1 -ExpandProperty OwningProcess)
+Get-Process -Id $pid
 ```
 
 From another machine:
@@ -144,6 +211,14 @@ curl -s http://47.131.93.120:8100 | head -30
 ```
 
 If public access does not work but local access does, check AWS Security Group, subnet NACL, and Windows Firewall for TCP `8100`.
+
+When migrating from an older proxy-based setup, stop the old proxy process:
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -like "*metrics_proxy.py*" } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+```
 
 ## Progress checks
 
