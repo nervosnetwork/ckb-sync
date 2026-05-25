@@ -1,21 +1,19 @@
-import discord
-import sys
-from dotenv import load_dotenv
+import json
 import os
-import asyncio
+import sys
+import urllib.error
+import urllib.request
 
-# 检查是否有足够的参数，至少需要一个文件名
+from dotenv import load_dotenv
+
+
 if len(sys.argv) < 2:
     print("使用方法: python3 sendMsg.py <文件名> [<环境变量文件>]")
     sys.exit(1)
 
-# 环境文件参数是可选的
-env_file = sys.argv[2] if len(sys.argv) > 2 else '.env'
-
-# 加载环境变量
+env_file = sys.argv[2] if len(sys.argv) > 2 else ".env"
 load_dotenv(env_file)
 
-# 从环境变量中获取TOKEN和CHANNEL_ID
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID_TEXT = os.getenv("DISCORD_CHANNEL_ID")
 
@@ -30,70 +28,91 @@ except ValueError:
     sys.exit(1)
 
 try:
-    SEND_TIMEOUT = int(os.getenv("DISCORD_SEND_TIMEOUT", "120"))
+    SEND_TIMEOUT = int(os.getenv("DISCORD_SEND_TIMEOUT", "30"))
 except ValueError:
-    SEND_TIMEOUT = 120
+    SEND_TIMEOUT = 30
 
-# 获取文件名
 file_name = sys.argv[1]
 
-# 读取文件内容
 try:
-    with open(file_name, 'r') as file:
+    with open(file_name, "r", encoding="utf-8") as file:
+        message_content = file.read()
+except UnicodeDecodeError:
+    with open(file_name, "r") as file:
         message_content = file.read()
 except FileNotFoundError:
-    print(f"找不到文件: {file_name}")
+    print(f"找不到文件: {file_name}", file=sys.stderr)
     sys.exit(1)
 except Exception as e:
-    print(f"读取文件时出错: {e}")
+    print(f"读取文件时出错: {e}", file=sys.stderr)
     sys.exit(1)
 
-intents = discord.Intents.default()
-intents.message_content = True
 
-# 声明一个客户端
-client = discord.Client(intents=intents)
-send_error = None
+def split_message(content, limit=1900):
+    lines = content.splitlines(keepends=True)
+    chunks = []
+    current = ""
 
+    for line in lines:
+        if len(line) > limit:
+            if current:
+                chunks.append(current)
+                current = ""
+            for offset in range(0, len(line), limit):
+                chunks.append(line[offset : offset + limit])
+            continue
 
-# 当客户端准备好时触发的事件处理器
-@client.event
-async def on_ready():
-    global send_error
-    print(f'已登录为 {client.user}')
+        if len(current) + len(line) > limit:
+            chunks.append(current)
+            current = line
+        else:
+            current += line
 
-    try:
-        # 发送消息到指定的频道。缓存里没有时主动 fetch，避免 channel 为 None 后客户端挂住。
-        channel = client.get_channel(CHANNEL_ID)
-        if channel is None:
-            channel = await client.fetch_channel(CHANNEL_ID)
+    if current:
+        chunks.append(current)
 
-        await channel.send(message_content)
-        print(f"已发送到频道 {CHANNEL_ID}")
-    except Exception as e:
-        send_error = e
-        print(f"发送消息时出错: {e}", file=sys.stderr)
-    finally:
-        await client.close()
+    return chunks or ["(empty report)"]
 
 
-# 运行客户端
-async def main():
-    try:
-        await asyncio.wait_for(client.start(TOKEN), timeout=SEND_TIMEOUT)
-    except asyncio.TimeoutError:
-        await client.close()
-        print(f"发送消息超时: {SEND_TIMEOUT} 秒", file=sys.stderr)
-        return 1
-    except Exception as e:
-        await client.close()
-        print(f"Discord 客户端错误: {e}", file=sys.stderr)
-        return 1
+def send_discord_message(content):
+    url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
+    payload = {
+        "content": content,
+        "allowed_mentions": {"parse": []},
+    }
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={
+            "Authorization": f"Bot {TOKEN}",
+            "Content-Type": "application/json",
+            "User-Agent": "ckb-sync-report/1.0",
+        },
+    )
 
-    if send_error is not None:
-        return 1
+    with urllib.request.urlopen(request, timeout=SEND_TIMEOUT) as response:
+        response.read()
+        return response.status
 
-    return 0
 
-
-sys.exit(asyncio.run(main()))
+try:
+    chunks = split_message(message_content)
+    for index, chunk in enumerate(chunks, start=1):
+        prefix = "" if len(chunks) == 1 else f"[{index}/{len(chunks)}]\n"
+        status = send_discord_message(prefix + chunk)
+        print(f"已发送到频道 {CHANNEL_ID}, HTTP {status}")
+except urllib.error.HTTPError as e:
+    detail = e.read().decode("utf-8", errors="replace")
+    print(f"Discord API HTTP {e.code}: {detail}", file=sys.stderr)
+    sys.exit(1)
+except urllib.error.URLError as e:
+    print(f"Discord API 网络错误: {e.reason}", file=sys.stderr)
+    sys.exit(1)
+except TimeoutError:
+    print(f"Discord API 超时: {SEND_TIMEOUT} 秒", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"发送消息时出错: {e}", file=sys.stderr)
+    sys.exit(1)
