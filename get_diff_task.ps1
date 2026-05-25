@@ -22,12 +22,14 @@ try {
     Set-Location -LiteralPath $scriptDir
     Write-TaskLog "start net=$Net"
 
-    $args = @("-Net", $Net)
+    $scriptArgs = @{
+        Net = $Net
+    }
     if (-not [string]::IsNullOrWhiteSpace($MetricsHost)) {
-        $args += @("-MetricsHost", $MetricsHost)
+        $scriptArgs.MetricsHost = $MetricsHost
     }
 
-    $output = & (Join-Path $scriptDir "get_diff.ps1") @args 2>&1
+    $output = & (Join-Path $scriptDir "get_diff.ps1") @scriptArgs 2>&1
     foreach ($line in $output) {
         Write-TaskLog "$line"
     }

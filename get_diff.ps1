@@ -12,6 +12,11 @@ param(
 
 $ErrorActionPreference = "Continue"
 
+if (-not [string]::IsNullOrWhiteSpace($MetricsHost) -and $MetricsHost.Trim().StartsWith("-")) {
+    Write-Warning "Ignoring invalid metrics host argument '$MetricsHost'. Use -Net <all|main|test> and -MetricsHost <host> as named arguments."
+    $MetricsHost = $env:CKB_SYNC_METRICS_HOST
+}
+
 function Get-NowText {
     return (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 }
@@ -218,22 +223,58 @@ function Stop-CkbByPort {
     }
 }
 
+function Get-ExpectedMode {
+    param(
+        [string]$Net,
+        [string]$LogPath
+    )
+
+    $logName = Split-Path -Leaf $LogPath
+    $withoutRestart = $logName -like "without_restart_result*"
+
+    if ($Net -eq "mainnet") {
+        if ($withoutRestart) {
+            return "1"
+        }
+        return "3"
+    }
+
+    if ($withoutRestart) {
+        return "2"
+    }
+    return "4"
+}
+
+function Get-NextMode {
+    param([string]$Mode)
+
+    switch ($Mode) {
+        "1" { return "2" }
+        "2" { return "3" }
+        "3" { return "4" }
+        "4" { return "1" }
+        default { return "1" }
+    }
+}
+
 function Switch-EnvFile {
+    param([string]$ExpectedMode)
+
     $file = "env.txt"
     if (-not (Test-Path -LiteralPath $file)) {
         Write-Warning "$file not found"
-        return
+        return $null
     }
 
     $lines = @(Get-Content -LiteralPath $file)
     $first = if ($lines.Count -gt 0) { $lines[0].Trim() } else { "" }
-    switch ($first) {
-        "1" { $next = "2" }
-        "2" { $next = "3" }
-        "3" { $next = "4" }
-        "4" { $next = "1" }
-        default { $next = "1" }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedMode) -and $first -ne $ExpectedMode) {
+        Write-Warning "Skip env.txt switch: current mode is '$first', but completed round expects mode '$ExpectedMode'."
+        return $null
     }
+
+    $next = Get-NextMode -Mode $first
 
     if ($lines.Count -eq 0) {
         $lines = @($next, "1")
@@ -247,31 +288,181 @@ function Switch-EnvFile {
         $lines[1] = "1"
     }
 
-    Set-Content -LiteralPath $file -Value $lines -Encoding UTF8
+    Set-Content -LiteralPath $file -Value $lines -Encoding ASCII
+    Write-Host "[info] Updated env.txt -> mode=$($lines[0]) is_exec=$($lines[1])"
+
+    return [pscustomobject]@{
+        Mode = $lines[0]
+        IsExec = $lines[1]
+    }
 }
 
 function Invoke-SendMessage {
-    param([string]$LogPath)
+    param(
+        [string]$LogPath,
+        [int]$TimeoutSeconds = 120
+    )
 
     if (-not (Test-Path -LiteralPath "sendMsg.py")) {
-        return
+        Write-Warning "Cannot send report: sendMsg.py not found"
+        return $false
     }
 
     $logName = Split-Path -Leaf $LogPath
-    $args = @("sendMsg.py", $LogPath)
+    $sendArgs = @("sendMsg.py", $LogPath)
     if ($logName -like "without_restart_result*") {
-        $args += ".without_restart_env"
+        $sendArgs += ".without_restart_env"
     }
 
     $python = Get-Command python -ErrorAction SilentlyContinue
     if ($python) {
-        & $python.Source @args
+        $exe = $python.Source
+        $processArgs = $sendArgs
+    }
+    else {
+        $py = Get-Command py -ErrorAction SilentlyContinue
+        if (-not $py) {
+            Write-Warning "Cannot send report: neither python nor py was found"
+            return $false
+        }
+
+        $exe = $py.Source
+        $processArgs = @("-3") + $sendArgs
+    }
+
+    $outFile = Join-Path ([System.IO.Path]::GetTempPath()) ("ckb-sync-send-{0}.out" -f ([guid]::NewGuid().ToString("N")))
+    $errFile = Join-Path ([System.IO.Path]::GetTempPath()) ("ckb-sync-send-{0}.err" -f ([guid]::NewGuid().ToString("N")))
+
+    try {
+        $process = Start-Process -FilePath $exe `
+            -ArgumentList $processArgs `
+            -WorkingDirectory (Get-Location).Path `
+            -RedirectStandardOutput $outFile `
+            -RedirectStandardError $errFile `
+            -WindowStyle Hidden `
+            -PassThru
+
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Write-Warning "sendMsg.py timed out after $TimeoutSeconds seconds"
+            return $false
+        }
+
+        if (Test-Path -LiteralPath $outFile) {
+            Get-Content -LiteralPath $outFile | ForEach-Object {
+                if (-not [string]::IsNullOrWhiteSpace($_)) {
+                    Write-Host "sendMsg: $_"
+                }
+            }
+        }
+
+        if (Test-Path -LiteralPath $errFile) {
+            Get-Content -LiteralPath $errFile | ForEach-Object {
+                if (-not [string]::IsNullOrWhiteSpace($_)) {
+                    Write-Warning "sendMsg: $_"
+                }
+            }
+        }
+
+        if ($process.ExitCode -ne 0) {
+            Write-Warning "sendMsg.py exited with code $($process.ExitCode)"
+            return $false
+        }
+
+        return $true
+    }
+    catch {
+        Write-Warning "Cannot send report: $($_.Exception.Message)"
+        return $false
+    }
+    finally {
+        Remove-Item -LiteralPath $outFile, $errFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Convert-LogTimeToUnixMilliseconds {
+    param(
+        [string]$TimeText,
+        [datetime]$Fallback
+    )
+
+    try {
+        $parsed = [datetime]::ParseExact($TimeText, "yyyy-MM-dd HH:mm:ss", $null)
+        return ([DateTimeOffset]$parsed).ToUnixTimeMilliseconds()
+    }
+    catch {
+        return ([DateTimeOffset]$Fallback).ToUnixTimeMilliseconds()
+    }
+}
+
+function Ensure-GrafanaLink {
+    param(
+        [string]$Net,
+        [string]$LogPath,
+        [int]$MetricsPort,
+        [string]$MetricsHost
+    )
+
+    if ([string]::IsNullOrWhiteSpace($MetricsHost)) {
         return
     }
 
-    $py = Get-Command py -ErrorAction SilentlyContinue
-    if ($py) {
-        & $py.Source -3 @args
+    $content = Get-Content -LiteralPath $LogPath -Raw
+    $target = "${MetricsHost}:$MetricsPort"
+    if ($content -match [regex]::Escape("var-url=$target")) {
+        return
+    }
+
+    $syncStartMatch = [regex]::Match($content, "sync_start:\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+    $killTimeMatch = [regex]::Match($content, "$Net kill_time:\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+
+    $fromMs = Convert-LogTimeToUnixMilliseconds -TimeText $syncStartMatch.Groups[1].Value -Fallback (Get-Date).AddHours(-3)
+    $toMs = Convert-LogTimeToUnixMilliseconds -TimeText $killTimeMatch.Groups[1].Value -Fallback (Get-Date)
+
+    Add-Content -LiteralPath $LogPath -Value "metrics_target: $target"
+    Add-Content -LiteralPath $LogPath -Value "Grafana: https://grafana-monitor.nervos.tech/d/pThsj6xVz/test?orgId=1&var-url=$target&from=$fromMs&to=$toMs"
+}
+
+function Complete-PostKillActions {
+    param(
+        [string]$Net,
+        [string]$LogPath,
+        [int]$MetricsPort,
+        [string]$MetricsHost
+    )
+
+    $escapedNet = [regex]::Escape($Net)
+    Ensure-GrafanaLink -Net $Net -LogPath $LogPath -MetricsPort $MetricsPort -MetricsHost $MetricsHost
+
+    $content = Get-Content -LiteralPath $LogPath -Raw
+    $envReady = $false
+
+    if ($content -match "(?m)^$escapedNet env_switched:") {
+        $envReady = $true
+    }
+    else {
+        $expectedMode = Get-ExpectedMode -Net $Net -LogPath $LogPath
+        $newState = Switch-EnvFile -ExpectedMode $expectedMode
+        if ($newState) {
+            Add-Content -LiteralPath $LogPath -Value "$Net env_switched: $(Get-NowText) (mode: $($newState.Mode), is_exec: $($newState.IsExec))"
+            $envReady = $true
+        }
+    }
+
+    if (-not $envReady) {
+        return
+    }
+
+    $content = Get-Content -LiteralPath $LogPath -Raw
+    if ($content -match "(?m)^$escapedNet report_sent:") {
+        return
+    }
+
+    if (Invoke-SendMessage -LogPath $LogPath) {
+        Add-Content -LiteralPath $LogPath -Value "$Net report_sent: $(Get-NowText)"
+    }
+    else {
+        Write-Warning "Report is complete and env.txt was advanced, but sendMsg.py did not complete successfully."
     }
 }
 
@@ -290,7 +481,12 @@ function Stop-AfterSyncEndWindow {
     }
 
     $content = Get-Content -LiteralPath $LogPath -Raw
-    if ($content -notmatch "$Net sync_end" -or $content -match "$Net kill_time") {
+    if ($content -match "$Net kill_time") {
+        Complete-PostKillActions -Net $Net -LogPath $LogPath -MetricsPort $MetricsPort -MetricsHost $MetricsHost
+        return
+    }
+
+    if ($content -notmatch "$Net sync_end") {
         return
     }
 
@@ -329,8 +525,7 @@ function Stop-AfterSyncEndWindow {
     $toMs = ([DateTimeOffset](Get-Date)).ToUnixTimeMilliseconds()
     Add-Content -LiteralPath $LogPath -Value "metrics_target: ${MetricsHost}:$MetricsPort"
     Add-Content -LiteralPath $LogPath -Value "Grafana: https://grafana-monitor.nervos.tech/d/pThsj6xVz/test?orgId=1&var-url=${MetricsHost}:$MetricsPort&from=$fromMs&to=$toMs"
-    Invoke-SendMessage -LogPath $LogPath
-    Switch-EnvFile
+    Complete-PostKillActions -Net $Net -LogPath $LogPath -MetricsPort $MetricsPort -MetricsHost $MetricsHost
 }
 
 $currentDay = (Get-Date).ToString("yyyy-MM-dd")
