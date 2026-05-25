@@ -65,7 +65,7 @@ No restart for ckb in this test round
 
 ## Diff collection
 
-The reliable setup is a hidden PowerShell loop. It runs `get_diff_task.ps1 -Net main` every 20 minutes and adds a timeout for each collection run.
+The reliable setup is a hidden PowerShell loop. It runs `get_diff_task.ps1 -Net auto` every 20 minutes and adds a timeout for each collection run. In `auto` mode, diff collection follows `env.txt`: modes `1`/`3` collect mainnet and modes `2`/`4` collect testnet.
 
 Disable the old Task Scheduler diff task if it exists:
 
@@ -86,7 +86,7 @@ Start the hidden loop:
 
 ```powershell
 Start-Process powershell.exe `
-  -ArgumentList "-NoLogo -NoProfile -ExecutionPolicy Bypass -File C:\project\ckb-sync\get_diff_loop.ps1 -Net main" `
+  -ArgumentList "-NoLogo -NoProfile -ExecutionPolicy Bypass -File C:\project\ckb-sync\get_diff_loop.ps1 -Net auto" `
   -WindowStyle Hidden
 ```
 
@@ -183,7 +183,7 @@ Start-Process -FilePath "$($ckbDir.FullName)\ckb.exe" `
 
 # Restart the diff collector.
 Start-Process powershell.exe `
-  -ArgumentList "-NoLogo -NoProfile -ExecutionPolicy Bypass -File C:\project\ckb-sync\get_diff_loop.ps1 -Net main" `
+  -ArgumentList "-NoLogo -NoProfile -ExecutionPolicy Bypass -File C:\project\ckb-sync\get_diff_loop.ps1 -Net auto" `
   -WorkingDirectory "C:\project\ckb-sync" `
   -WindowStyle Hidden
 ```

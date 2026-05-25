@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $false)]
-    [ValidateSet("all", "main", "test")]
-    [string]$Net = "main",
+    [ValidateSet("auto", "all", "main", "test")]
+    [string]$Net = "auto",
 
     [Parameter(Mandatory = $false)]
     [int]$IntervalSeconds = 1200,

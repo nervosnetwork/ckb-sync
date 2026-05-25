@@ -3,7 +3,7 @@ setlocal
 
 set "SCRIPT_DIR=%~dp0"
 set "NET=%~1"
-if "%NET%"=="" set "NET=main"
+if "%NET%"=="" set "NET=auto"
 
 cd /d "%SCRIPT_DIR%"
 
