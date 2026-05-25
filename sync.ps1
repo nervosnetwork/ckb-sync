@@ -154,7 +154,7 @@ function Update-CkbToml {
     $content = $content -replace '(?m)^listen_address\s*=.*$', "listen_address = `"0.0.0.0:$RpcPort`""
 
     if ($IsTestnet) {
-        $content = $content -replace '(?m)^(listen_addresses\s*=.*)8115(.*)$', '$18125$2'
+        $content = $content -replace '(?m)^(listen_addresses\s*=.*)8115(.*)$', '${1}8125${2}'
     }
 
     $content = Add-IndexerModule -Content $content
