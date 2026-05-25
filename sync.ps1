@@ -210,7 +210,7 @@ if ($Net -eq "main") {
 else {
     $Label = "testnet"
     $RpcPort = 8124
-    $MetricsPort = 8102
+    $MetricsPort = 8100
     $AssumeValidTarget = $TestnetAssumeValidTarget
 }
 

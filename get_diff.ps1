@@ -552,6 +552,6 @@ if ($resultLogFile) {
 
     if ($test) {
         Add-SyncEndIfReady -Net "testnet" -Snapshot $test -LogPath $resultLogFile.FullName
-        Stop-AfterSyncEndWindow -Net "testnet" -Snapshot $test -LogPath $resultLogFile.FullName -Port 8124 -MetricsPort 8102 -MetricsHost $MetricsHost
+        Stop-AfterSyncEndWindow -Net "testnet" -Snapshot $test -LogPath $resultLogFile.FullName -Port 8124 -MetricsPort 8100 -MetricsHost $MetricsHost
     }
 }
