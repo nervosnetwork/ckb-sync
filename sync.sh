@@ -51,6 +51,12 @@ else
 	ASSUME_VALID_TARGET="$testnet_assume_valid_target"
 fi
 
+if [[ -z "$ASSUME_VALID_TARGET" ]]; then
+	ASSUME_VALID_TARGET_REPORT="latest"
+else
+	ASSUME_VALID_TARGET_REPORT="$ASSUME_VALID_TARGET"
+fi
+
 # 先杀掉目标网络
 kill_ckb_by_port "$RPC_PORT" "$LABEL"
 sleep 2
@@ -181,6 +187,7 @@ interval = 5
 	cd ..
 fi
 
+echo "assume_valid_target: ${ASSUME_VALID_TARGET_REPORT}" >>"$result_log"
 echo "rich-indexer type: Not Enabled" >>"$result_log"
 
 # -------- 启动目标网络节点 --------
@@ -190,12 +197,10 @@ if [[ "$NET" == "main" ]]; then
 	cd "mainnet_ckb_${ckb_version}_x86_64-unknown-linux-gnu" || exit 1
 
 	if [ -z "${ASSUME_VALID_TARGET}" ]; then
-		# https://github.com/nervosnetwork/ckb/blob/pkg/v0.203.0/util/constant/src/latest_assume_valid_target.rs
+		# https://github.com/nervosnetwork/ckb/blob/rc/v0.206.x/util/constant/src/latest_assume_valid_target.rs
 		setsid -f ./ckb run >/dev/null 2>&1 </dev/null
-		echo "mainnet assume-valid-target: default" >>"$result_log"
 	else
 		setsid -f ./ckb run --assume-valid-target "$ASSUME_VALID_TARGET" >/dev/null 2>&1 &
-		echo "mainnet assume-valid-target: ${ASSUME_VALID_TARGET}" >>"$result_log"
 	fi
 	cd ..
 
@@ -205,10 +210,8 @@ else
 
 	if [ -z "${ASSUME_VALID_TARGET}" ]; then
 		setsid -f ./ckb run >/dev/null 2>&1 &
-		echo "testnet assume-valid-target: default" >>"$result_log"
 	else
 		setsid -f ./ckb run --assume-valid-target "$ASSUME_VALID_TARGET" >/dev/null 2>&1 &
-		echo "testnet assume-valid-target: ${ASSUME_VALID_TARGET}" >>"$result_log"
 	fi
 	cd ..
 fi
