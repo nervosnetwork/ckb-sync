@@ -18,6 +18,7 @@ if [[ "$RESTART_FLAG" != "0" && "$RESTART_FLAG" != "1" ]]; then
 fi
 
 # 0x0000000000000000000000000000000000000000000000000000000000000000
+ckb_version_prefix="v0.206"
 mainnet_assume_valid_target=""
 testnet_assume_valid_target=""
 
@@ -52,7 +53,7 @@ else
 fi
 
 if [[ -z "$ASSUME_VALID_TARGET" ]]; then
-	ASSUME_VALID_TARGET_REPORT="latest"
+	ASSUME_VALID_TARGET_REPORT="[latest_assume_valid_target.rs](https://github.com/nervosnetwork/ckb/blob/rc/${ckb_version_prefix}.x/util/constant/src/latest_assume_valid_target.rs)"
 else
 	ASSUME_VALID_TARGET_REPORT="$ASSUME_VALID_TARGET"
 fi
@@ -64,7 +65,7 @@ sleep 2
 # -------- 获取并解包 CKB --------
 ckb_version=$(
 	curl -s https://api.github.com/repos/nervosnetwork/ckb/releases |
-		jq -r '.[] | select(.tag_name | startswith("v0.206")) |
+		jq --arg vp "$ckb_version_prefix" -r '.[] | select(.tag_name | startswith($vp)) |
       {tag_name, published_at} | "\(.published_at) \(.tag_name)"' |
 		sort | tail -n 1 | cut -d " " -f2
 )
@@ -197,7 +198,8 @@ if [[ "$NET" == "main" ]]; then
 	cd "mainnet_ckb_${ckb_version}_x86_64-unknown-linux-gnu" || exit 1
 
 	if [ -z "${ASSUME_VALID_TARGET}" ]; then
-		# https://github.com/nervosnetwork/ckb/blob/rc/v0.206.x/util/constant/src/latest_assume_valid_target.rs
+		# 不传 --assume-valid-target 时，CKB 会使用内置的 latest assume-valid target。
+		# v0.206 固定参考: https://github.com/nervosnetwork/ckb/blob/2c91814044f4e1e7a862ed3e2c0d79df255013db/util/constant/src/latest_assume_valid_target.rs
 		setsid -f ./ckb run >/dev/null 2>&1 </dev/null
 	else
 		setsid -f ./ckb run --assume-valid-target "$ASSUME_VALID_TARGET" >/dev/null 2>&1 &
