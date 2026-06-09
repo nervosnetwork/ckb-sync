@@ -1,6 +1,7 @@
 #!/bin/bash
 
 PORT=8124
+testnet_assume_valid_target=""
 
 kill_test_ckb() {
 	PIDS=$(sudo lsof -ti:${PORT})
@@ -13,4 +14,8 @@ kill_test_ckb() {
 kill_test_ckb
 
 cd testnet_ckb_*_x86_64-unknown-linux-gnu || exit
-setsid -f ./ckb run >/dev/null 2>&1 &
+if [ -z "${testnet_assume_valid_target}" ]; then
+	setsid -f ./ckb run >/dev/null 2>&1 &
+else
+	setsid -f ./ckb run --assume-valid-target "$testnet_assume_valid_target" >/dev/null 2>&1 &
+fi
