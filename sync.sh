@@ -18,7 +18,7 @@ if [[ "$RESTART_FLAG" != "0" && "$RESTART_FLAG" != "1" ]]; then
 fi
 
 # 0x0000000000000000000000000000000000000000000000000000000000000000
-ckb_version_prefix="v0.206"
+ckb_version_prefix="v0.207"
 mainnet_assume_valid_target=""
 testnet_assume_valid_target=""
 
