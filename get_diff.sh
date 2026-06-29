@@ -247,7 +247,8 @@ handle_sync_end_and_maybe_kill() {
 			echo "$label kill_time: $(TZ='Asia/Shanghai' date "+%Y-%m-%d %H:%M:%S")（当前高度：$curr_height,当前indexer_tip: $curr_tip)" >>"$result_log"
 			# 根据网络选择 Grafana 的 metrics 端口：mainnet=8100，testnet=8102
 			local NODE_IP metrics_port
-			NODE_IP=$(curl -s ifconfig.me || echo "127.0.0.1")
+			NODE_IP=$(curl -4 -fsS https://ifconfig.me/ip 2>/dev/null || curl -4 -fsS https://ipv4.icanhazip.com 2>/dev/null || echo "127.0.0.1")
+			NODE_IP=$(echo "$NODE_IP" | tr -d '[:space:]')
 			if [[ "$label" == "mainnet" ]]; then
 				metrics_port=8100
 			else
