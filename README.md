@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File .\get_diff.ps1
 
 For scheduled Windows runs, use `run.ps1` instead of calling `sync.ps1` directly.
 `run.ps1` follows `env.txt` like the Linux `run.sh`: mode `1`/`2` starts a without-restart round once, then later timer runs do nothing until `get_diff.ps1` advances `env.txt`.
-Mode `3`/`4` performs restart rounds. Windows active modes are controlled by `mode_sequence.txt`; the default `1,2` runs mainnet, sends a report, then runs testnet and repeats. Change it to `1,2,3,4` to restore the four-mode cycle.
+Mode `3`/`4` uses flag `1` and writes `result_*.log`. Windows active modes are controlled by `mode_sequence.txt`; the default `3,4` runs mainnet, sends a report, then runs testnet and repeats. Change it to `1,2,3,4` to restore the four-mode cycle.
 For Windows Task Scheduler, prefer `get_diff_task.ps1` for diff collection because it wraps `get_diff.ps1` with task-friendly logging.
 If Task Scheduler has quoting issues with PowerShell actions, use `get_diff_task.cmd auto` as the scheduled action.
 If Task Scheduler waits on PowerShell and leaves the task in `0x41301` running state, use `get_diff_task_detached.cmd auto`.

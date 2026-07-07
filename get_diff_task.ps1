@@ -22,7 +22,7 @@ function Write-TaskLog {
 }
 
 function Get-ModeSequence {
-    $defaultSequence = @("1", "2")
+    $defaultSequence = @("3", "4")
     $file = "mode_sequence.txt"
 
     if (-not (Test-Path -LiteralPath $file)) {
