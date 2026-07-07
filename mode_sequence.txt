@@ -1,0 +1,9 @@
+# Active Windows mode sequence.
+# 1 = mainnet without-restart round
+# 2 = testnet without-restart round
+# 3 = mainnet restart round
+# 4 = testnet restart round
+#
+# Current flow: mainnet report -> testnet report -> repeat.
+# Use 1,2,3,4 later to restore the four-mode cycle.
+1,2

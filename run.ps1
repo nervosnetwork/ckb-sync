@@ -2,6 +2,9 @@ $ErrorActionPreference = "Stop"
 
 $PortMainnet = 8114
 $PortTestnet = 8124
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+Set-Location -LiteralPath $scriptDir
 
 function Get-NowText {
     return (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
@@ -61,16 +64,54 @@ function Set-EnvState {
     Set-Content -LiteralPath "env.txt" -Encoding ASCII -Value @($Mode, $IsExec)
 }
 
+function Get-ModeSequence {
+    $defaultSequence = @("1", "2")
+    $file = "mode_sequence.txt"
+
+    if (-not (Test-Path -LiteralPath $file)) {
+        return $defaultSequence
+    }
+
+    $content = Get-Content -LiteralPath $file | ForEach-Object {
+        $_ -replace '#.*$', ''
+    }
+
+    $modes = @(($content -join " ") -split '[,\s]+' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -in @("1", "2", "3", "4") })
+
+    if ($modes.Count -eq 0) {
+        return $defaultSequence
+    }
+
+    $sequence = New-Object System.Collections.Generic.List[string]
+    foreach ($modeValue in $modes) {
+        if (-not $sequence.Contains($modeValue)) {
+            [void]$sequence.Add($modeValue)
+        }
+    }
+
+    return @($sequence.ToArray())
+}
+
 if (-not (Test-Path -LiteralPath "env.txt")) {
     Set-EnvState -Mode "1" -IsExec "1"
     Write-Host "[info] env.txt not found, created with default values:"
     Get-Content -LiteralPath "env.txt"
 }
 
+$modeSequence = @(Get-ModeSequence)
 $envLines = @(Get-Content -LiteralPath "env.txt")
 $mode = if ($envLines.Count -ge 1) { $envLines[0].Trim() } else { "1" }
 $isExec = if ($envLines.Count -ge 2) { $envLines[1].Trim() } else { "1" }
 $currentTime = Get-NowText
+
+if ($modeSequence -notcontains $mode) {
+    $mode = $modeSequence[0]
+    $isExec = "1"
+    Set-EnvState -Mode $mode -IsExec $isExec
+    Write-Warning "Current mode is not enabled by mode_sequence.txt; reset env.txt to mode=$mode is_exec=$isExec"
+}
 
 if ($isExec -eq "0") {
     switch ($mode) {

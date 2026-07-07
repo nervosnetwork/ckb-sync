@@ -21,13 +21,48 @@ function Write-TaskLog {
     Add-Content -LiteralPath $taskLog -Encoding UTF8 -Value $line
 }
 
+function Get-ModeSequence {
+    $defaultSequence = @("1", "2")
+    $file = "mode_sequence.txt"
+
+    if (-not (Test-Path -LiteralPath $file)) {
+        return $defaultSequence
+    }
+
+    $content = Get-Content -LiteralPath $file | ForEach-Object {
+        $_ -replace '#.*$', ''
+    }
+
+    $modes = @(($content -join " ") -split '[,\s]+' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -in @("1", "2", "3", "4") })
+
+    if ($modes.Count -eq 0) {
+        return $defaultSequence
+    }
+
+    $sequence = New-Object System.Collections.Generic.List[string]
+    foreach ($modeValue in $modes) {
+        if (-not $sequence.Contains($modeValue)) {
+            [void]$sequence.Add($modeValue)
+        }
+    }
+
+    return @($sequence.ToArray())
+}
+
 function Get-NetFromEnv {
     if (-not (Test-Path -LiteralPath "env.txt")) {
         return $null
     }
 
+    $modeSequence = @(Get-ModeSequence)
     $envLines = @(Get-Content -LiteralPath "env.txt")
     $mode = if ($envLines.Count -ge 1) { $envLines[0].Trim() } else { "" }
+
+    if ($modeSequence -notcontains $mode) {
+        $mode = $modeSequence[0]
+    }
 
     switch ($mode) {
         { $_ -in @("1", "3") } { return "main" }

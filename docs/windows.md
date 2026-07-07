@@ -45,6 +45,31 @@ mode=1    mainnet without-restart
 is_exec=0 do not start/reinitialize again in this round
 ```
 
+## Mode sequence
+
+Windows keeps the same four mode IDs as Ubuntu, but the active cycle is configured in `mode_sequence.txt`:
+
+```text
+1 = mainnet without-restart round
+2 = testnet without-restart round
+3 = mainnet restart round
+4 = testnet restart round
+```
+
+The current default is `1,2`, which runs:
+
+```text
+mainnet sync -> report -> testnet sync -> report -> repeat
+```
+
+To restore the four-mode cycle later, set `mode_sequence.txt` to:
+
+```text
+1,2,3,4
+```
+
+If `env.txt` contains a mode that is not enabled by `mode_sequence.txt`, `run.ps1` resets it to the first enabled mode with `is_exec=1`.
+
 Do not put `sync.ps1` in a timer. `sync.ps1` kills the existing CKB process, deletes the network directory, initializes a fresh directory, and starts syncing from scratch.
 
 ## Optional run scheduler
@@ -65,7 +90,7 @@ No restart for ckb in this test round
 
 ## Diff collection
 
-The reliable setup is a hidden PowerShell loop. It runs `get_diff_task.ps1 -Net auto` every 20 minutes and adds a timeout for each collection run. In `auto` mode, diff collection follows `env.txt`: modes `1`/`3` collect mainnet and modes `2`/`4` collect testnet.
+The reliable setup is a hidden PowerShell loop. It runs `get_diff_task.ps1 -Net auto` every 20 minutes and adds a timeout for each collection run. In `auto` mode, diff collection follows `env.txt` and `mode_sequence.txt`: modes `1`/`3` collect mainnet and modes `2`/`4` collect testnet.
 
 Disable the old Task Scheduler diff task if it exists:
 

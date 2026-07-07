@@ -223,6 +223,36 @@ function Stop-CkbByPort {
     }
 }
 
+function Get-ModeSequence {
+    $defaultSequence = @("1", "2")
+    $file = "mode_sequence.txt"
+
+    if (-not (Test-Path -LiteralPath $file)) {
+        return $defaultSequence
+    }
+
+    $content = Get-Content -LiteralPath $file | ForEach-Object {
+        $_ -replace '#.*$', ''
+    }
+
+    $modes = @(($content -join " ") -split '[,\s]+' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -in @("1", "2", "3", "4") })
+
+    if ($modes.Count -eq 0) {
+        return $defaultSequence
+    }
+
+    $sequence = New-Object System.Collections.Generic.List[string]
+    foreach ($modeValue in $modes) {
+        if (-not $sequence.Contains($modeValue)) {
+            [void]$sequence.Add($modeValue)
+        }
+    }
+
+    return @($sequence.ToArray())
+}
+
 function Get-ExpectedMode {
     param(
         [string]$Net,
@@ -248,13 +278,14 @@ function Get-ExpectedMode {
 function Get-NextMode {
     param([string]$Mode)
 
-    switch ($Mode) {
-        "1" { return "2" }
-        "2" { return "3" }
-        "3" { return "4" }
-        "4" { return "1" }
-        default { return "1" }
+    $sequence = @(Get-ModeSequence)
+    $index = [array]::IndexOf($sequence, $Mode)
+
+    if ($index -lt 0 -or $sequence.Count -le 1) {
+        return $sequence[0]
     }
+
+    return $sequence[($index + 1) % $sequence.Count]
 }
 
 function Switch-EnvFile {
