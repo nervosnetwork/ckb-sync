@@ -13,6 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$CkbReleasePattern = "v0.207*"
 $MainnetAssumeValidTarget = ""
 $TestnetAssumeValidTarget = ""
 
@@ -112,15 +113,78 @@ function Get-LatestCkbRelease {
         -Headers @{ "User-Agent" = "ckb-sync-windows" }
 
     $release = $releases |
-        Where-Object { $_.tag_name -like "v0.206*" } |
+        Where-Object { $_.tag_name -like $CkbReleasePattern } |
         Sort-Object { [datetime]$_.published_at } |
         Select-Object -Last 1
 
     if (-not $release) {
-        throw "Cannot find CKB release matching v0.206*"
+        throw "Cannot find CKB release matching $CkbReleasePattern"
     }
 
     return $release
+}
+
+function Save-RemoteFileWithRetry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Uri,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutFile,
+
+        [int]$Attempts = 5,
+        [int]$DelaySeconds = 20
+    )
+
+    $tmpFile = "$OutFile.download"
+    Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue
+
+    for ($i = 1; $i -le $Attempts; $i++) {
+        try {
+            Write-Host "Downloading $OutFile (attempt $i/$Attempts)"
+            Invoke-WebRequest `
+                -Uri $Uri `
+                -OutFile $tmpFile `
+                -UseBasicParsing `
+                -TimeoutSec 300 `
+                -Headers @{ "User-Agent" = "ckb-sync-windows" }
+
+            if ((Test-Path -LiteralPath $tmpFile) -and ((Get-Item -LiteralPath $tmpFile).Length -gt 0)) {
+                Move-Item -LiteralPath $tmpFile -Destination $OutFile -Force
+                return
+            }
+
+            throw "downloaded file is empty"
+        }
+        catch {
+            Write-Warning "Invoke-WebRequest failed: $($_.Exception.Message)"
+            Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue
+        }
+
+        $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+        if ($curl) {
+            try {
+                Write-Host "Retrying with curl.exe (attempt $i/$Attempts)"
+                & $curl.Source -L --fail --connect-timeout 30 --retry 3 --retry-delay 5 -o $tmpFile $Uri
+                if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $tmpFile) -and ((Get-Item -LiteralPath $tmpFile).Length -gt 0)) {
+                    Move-Item -LiteralPath $tmpFile -Destination $OutFile -Force
+                    return
+                }
+            }
+            catch {
+                Write-Warning "curl.exe failed: $($_.Exception.Message)"
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        if ($i -lt $Attempts) {
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+
+    throw "Cannot download $OutFile from $Uri after $Attempts attempts"
 }
 
 function Add-IndexerModule {
@@ -231,7 +295,10 @@ if (-not $asset) {
 }
 
 if (-not (Test-Path -LiteralPath $assetName)) {
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $assetName
+    Save-RemoteFileWithRetry -Uri $asset.browser_download_url -OutFile $assetName
+}
+else {
+    Write-Host "Using cached asset: $assetName"
 }
 
 $targetPrefix = if ($Net -eq "main") { "mainnet" } else { "testnet" }
@@ -244,7 +311,6 @@ if (Test-Path -LiteralPath $extractDir) {
 }
 
 Expand-Archive -LiteralPath $assetName -DestinationPath . -Force
-Remove-Item -LiteralPath $assetName -Force
 
 $targetDir = "${targetPrefix}_ckb_${ckbVersion}_x86_64-pc-windows-msvc"
 Move-Item -LiteralPath $extractDir -Destination $targetDir -Force
