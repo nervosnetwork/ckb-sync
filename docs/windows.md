@@ -50,16 +50,16 @@ is_exec=0 do not start/reinitialize again in this round
 Windows keeps the same four mode IDs as Ubuntu, but the active cycle is configured in `mode_sequence.txt`:
 
 ```text
-1 = mainnet round with flag 0 (without_restart_result)
-2 = testnet round with flag 0 (without_restart_result)
-3 = mainnet round with flag 1 (result)
-4 = testnet round with flag 1 (result)
+1 = mainnet flag 0 round (without_restart_result, no periodic restart)
+2 = testnet flag 0 round (without_restart_result, no periodic restart)
+3 = mainnet flag 1 round (result, periodic restart while is_exec=0)
+4 = testnet flag 1 round (result, periodic restart while is_exec=0)
 ```
 
-The current default is `3,4`, which runs:
+The current default is `1,2`, which runs:
 
 ```text
-mode 3 mainnet sync -> report -> mode 4 testnet sync -> report -> repeat
+mode 1 mainnet sync -> report -> mode 2 testnet sync -> report -> repeat
 ```
 
 To restore the four-mode cycle later, set `mode_sequence.txt` to:

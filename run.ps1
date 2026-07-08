@@ -65,7 +65,7 @@ function Set-EnvState {
 }
 
 function Get-ModeSequence {
-    $defaultSequence = @("3", "4")
+    $defaultSequence = @("1", "2")
     $file = "mode_sequence.txt"
 
     if (-not (Test-Path -LiteralPath $file)) {

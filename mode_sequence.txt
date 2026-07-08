@@ -1,9 +1,9 @@
 # Active Windows mode sequence.
-# 1 = mainnet round with flag 0 (without_restart_result)
-# 2 = testnet round with flag 0 (without_restart_result)
-# 3 = mainnet round with flag 1 (result)
-# 4 = testnet round with flag 1 (result)
+# 1 = mainnet flag 0 round (without_restart_result, no periodic restart)
+# 2 = testnet flag 0 round (without_restart_result, no periodic restart)
+# 3 = mainnet flag 1 round (result, periodic restart while is_exec=0)
+# 4 = testnet flag 1 round (result, periodic restart while is_exec=0)
 #
 # Current flow: mainnet report -> testnet report -> repeat.
 # Use 1,2,3,4 later to restore the four-mode cycle.
-3,4
+1,2
