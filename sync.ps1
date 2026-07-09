@@ -13,7 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$CkbReleasePattern = "v0.207*"
+$CkbReleasePattern = "v0.208*"
 $MainnetAssumeValidTarget = ""
 $TestnetAssumeValidTarget = ""
 

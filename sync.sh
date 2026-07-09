@@ -18,7 +18,7 @@ if [[ "$RESTART_FLAG" != "0" && "$RESTART_FLAG" != "1" ]]; then
 fi
 
 # 0x0000000000000000000000000000000000000000000000000000000000000000
-ckb_version_prefix="v0.207"
+ckb_version_prefix="v0.208"
 mainnet_assume_valid_target=""
 testnet_assume_valid_target=""
 
@@ -199,7 +199,6 @@ if [[ "$NET" == "main" ]]; then
 
 	if [ -z "${ASSUME_VALID_TARGET}" ]; then
 		# 不传 --assume-valid-target 时，CKB 会使用内置的 latest assume-valid target。
-		# v0.206 固定参考: https://github.com/nervosnetwork/ckb/blob/2c91814044f4e1e7a862ed3e2c0d79df255013db/util/constant/src/latest_assume_valid_target.rs
 		setsid -f ./ckb run >/dev/null 2>&1 </dev/null
 	else
 		setsid -f ./ckb run --assume-valid-target "$ASSUME_VALID_TARGET" >/dev/null 2>&1 &
