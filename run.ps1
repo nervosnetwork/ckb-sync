@@ -13,7 +13,7 @@ function Get-NowText {
 function Write-RunLog {
     param([string]$Message)
 
-    Add-Content -LiteralPath "run.log" -Encoding UTF8 -Value "$(Get-NowText) $Message"
+    Add-Content -LiteralPath "ckb-sync-run.log" -Encoding UTF8 -Value "$(Get-NowText) $Message"
 }
 
 function Stop-CkbByPort {

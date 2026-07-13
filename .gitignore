@@ -4,7 +4,7 @@ env.txt
 diff_*
 result_*
 sync.log
-run.log
+ckb-sync-run.log
 kubernetes/ckb
 kubernetes/Dockerfile
 .env
