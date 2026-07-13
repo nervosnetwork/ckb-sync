@@ -32,6 +32,15 @@ function Stop-CkbByPort {
     }
 }
 
+function Test-PortListening {
+    param([int]$Port)
+
+    $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+
+    return $null -ne $listener
+}
+
 function Start-ExistingCkb {
     param(
         [string]$Prefix,
@@ -115,8 +124,24 @@ if ($modeSequence -notcontains $mode) {
 
 if ($isExec -eq "0") {
     switch ($mode) {
-        { $_ -in @("1", "2") } {
-            Write-Host "$currentTime No restart for ckb in this test round"
+        "1" {
+            if (Test-PortListening -Port $PortMainnet) {
+                Write-Host "$currentTime No restart for ckb in this test round"
+                exit 0
+            }
+
+            Write-Warning "$currentTime mainnet ckb is not listening on port $PortMainnet; starting existing directory without reinitializing"
+            Start-ExistingCkb -Prefix "mainnet" -Label "mainnet"
+            exit 0
+        }
+        "2" {
+            if (Test-PortListening -Port $PortTestnet) {
+                Write-Host "$currentTime No restart for ckb in this test round"
+                exit 0
+            }
+
+            Write-Warning "$currentTime testnet ckb is not listening on port $PortTestnet; starting existing directory without reinitializing"
+            Start-ExistingCkb -Prefix "testnet" -Label "testnet"
             exit 0
         }
         "3" {
