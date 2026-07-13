@@ -80,6 +80,7 @@ Manual sanity check:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run.ps1
+Get-Content C:\project\ckb-sync\run.log -Tail 20
 ```
 
 Expected output for the current mainnet without-restart round:
@@ -87,6 +88,8 @@ Expected output for the current mainnet without-restart round:
 ```text
 No restart for ckb in this test round
 ```
+
+In mode `1`/`2` with `is_exec=0`, `run.ps1` normally exits without touching CKB. If the expected RPC port is not listening, it starts the existing CKB directory without reinitializing and records `recover_start`, `recover_done`, or `recover_failed` in `run.log`.
 
 ## Diff collection
 

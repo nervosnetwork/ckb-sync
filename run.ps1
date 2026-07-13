@@ -10,6 +10,12 @@ function Get-NowText {
     return (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 }
 
+function Write-RunLog {
+    param([string]$Message)
+
+    Add-Content -LiteralPath "run.log" -Encoding UTF8 -Value "$(Get-NowText) $Message"
+}
+
 function Stop-CkbByPort {
     param(
         [int]$Port,
@@ -41,7 +47,7 @@ function Test-PortListening {
     return $null -ne $listener
 }
 
-function Start-ExistingCkb {
+function Get-LatestCkbDir {
     param(
         [string]$Prefix,
         [string]$Label
@@ -60,8 +66,42 @@ function Start-ExistingCkb {
         throw "Cannot find $ckbExe"
     }
 
+    return $dir
+}
+
+function Start-ExistingCkb {
+    param(
+        [string]$Prefix,
+        [string]$Label
+    )
+
+    $dir = Get-LatestCkbDir -Prefix $Prefix -Label $Label
+    $ckbExe = Join-Path $dir.FullName "ckb.exe"
+
     Write-Host "$(Get-NowText) restart $Label ckb from $($dir.Name)"
+    Write-RunLog "start_existing label=$Label dir=$($dir.Name)"
     Start-Process -FilePath $ckbExe -ArgumentList @("run") -WorkingDirectory $dir.FullName -WindowStyle Hidden
+    return $dir
+}
+
+function Recover-ExistingCkb {
+    param(
+        [string]$Mode,
+        [string]$Prefix,
+        [string]$Label,
+        [int]$Port
+    )
+
+    Write-RunLog "recover_start mode=$Mode label=$Label port=$Port reason=not_listening"
+
+    try {
+        $dir = Start-ExistingCkb -Prefix $Prefix -Label $Label
+        Write-RunLog "recover_done mode=$Mode label=$Label port=$Port dir=$($dir.Name)"
+    }
+    catch {
+        Write-RunLog "recover_failed mode=$Mode label=$Label port=$Port error=$($_.Exception.Message)"
+        throw
+    }
 }
 
 function Set-EnvState {
@@ -126,22 +166,24 @@ if ($isExec -eq "0") {
     switch ($mode) {
         "1" {
             if (Test-PortListening -Port $PortMainnet) {
+                Write-RunLog "check_ok mode=1 label=mainnet port=$PortMainnet action=none"
                 Write-Host "$currentTime No restart for ckb in this test round"
                 exit 0
             }
 
             Write-Warning "$currentTime mainnet ckb is not listening on port $PortMainnet; starting existing directory without reinitializing"
-            Start-ExistingCkb -Prefix "mainnet" -Label "mainnet"
+            Recover-ExistingCkb -Mode "1" -Prefix "mainnet" -Label "mainnet" -Port $PortMainnet
             exit 0
         }
         "2" {
             if (Test-PortListening -Port $PortTestnet) {
+                Write-RunLog "check_ok mode=2 label=testnet port=$PortTestnet action=none"
                 Write-Host "$currentTime No restart for ckb in this test round"
                 exit 0
             }
 
             Write-Warning "$currentTime testnet ckb is not listening on port $PortTestnet; starting existing directory without reinitializing"
-            Start-ExistingCkb -Prefix "testnet" -Label "testnet"
+            Recover-ExistingCkb -Mode "2" -Prefix "testnet" -Label "testnet" -Port $PortTestnet
             exit 0
         }
         "3" {
