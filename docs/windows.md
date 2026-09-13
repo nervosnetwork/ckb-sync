@@ -151,6 +151,53 @@ Get-CimInstance Win32_Process |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 ```
 
+## Repeated completion reports
+
+If identical reports arrive about every 20 minutes, check the matching result log
+and `get_diff_task.log`. After a successful send, the result log must contain a
+line such as `mainnet report_sent: 2026-09-13 09:20:58`. This marker is appended
+after sending, so its absence from the Discord message itself is normal.
+
+Older versions used `Start-Process` with redirected output followed by
+`WaitForExit()`. On Windows PowerShell this can leave `ExitCode` empty even when
+Python exits successfully ([PowerShell issue #5421](https://github.com/PowerShell/PowerShell/issues/5421)).
+The collector then reports `sendMsg.py exited with code `, omits `report_sent`,
+and sends the same completed report again on the next collection. An HTTP success
+line immediately followed by this empty-exit-code warning confirms this failure.
+Older `get_diff_task.ps1` versions only captured error/success streams (`2>&1`),
+so the sender's host output and warnings were missing from the task log.
+The updated wrapper captures all streams as they arrive, including diagnostics
+before an exception, and propagates the collector's exit code. A historical
+`done exit=0` alone does not prove that the report was delivered or marked sent.
+
+`get_diff.ps1` now owns the Python process directly to preserve its exit code and
+holds an exclusive per-report lock across checking, sending, and writing the
+marker. Python output is explicitly UTF-8 so printing the Chinese success log
+cannot fail because of an ASCII/legacy output encoding after delivery.
+A failed send can still retry; a recorded successful send is skipped.
+State-write errors stop finalization instead of silently continuing. Lock files
+end in `.report.lock`; the operating system releases the lock when the collector
+exits, so the presence of the file alone does not mean a collection is running.
+
+Deploy the updated `get_diff.ps1` and `get_diff_task.ps1` to the server. The hidden loop starts a fresh
+collector process each cycle and will load the new script. Reinitializing CKB
+with `sync.ps1` is not needed for this fix.
+
+An old report that was delivered but lacks `report_sent` will be retried once by
+the updated collector and then marked. To prevent even that retry, stop active
+collectors and append a `mainnet report_sent: <yyyy-MM-dd HH:mm:ss>` line (or
+`testnet` for a testnet report) to the exact result log whose delivery you have
+verified, then restart collection. Do not mark a report whose delivery is unknown.
+
+Offline regression checks use a temporary simulated Python sender and make no
+Discord or CKB RPC requests. Run them with Python 3 and PowerShell (including
+Windows PowerShell 5.1):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\windows-report.Tests.ps1
+# If Python is not on PATH, also pass -PythonExecutable C:\path\to\python.exe
+```
+
 ## Migrate existing server to native metrics
 
 Use this when an old Windows node was started with the proxy-based metrics setup. It preserves the existing CKB data directory.

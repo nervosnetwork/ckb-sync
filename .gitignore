@@ -5,6 +5,7 @@ diff_*
 result_*
 sync.log
 ckb-sync-run.log
+*.report.lock
 kubernetes/ckb
 kubernetes/Dockerfile
 .env

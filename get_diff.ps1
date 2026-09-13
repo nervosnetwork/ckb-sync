@@ -361,42 +361,53 @@ function Invoke-SendMessage {
         $processArgs = @("-3") + $sendArgs
     }
 
-    $outFile = Join-Path ([System.IO.Path]::GetTempPath()) ("ckb-sync-send-{0}.out" -f ([guid]::NewGuid().ToString("N")))
-    $errFile = Join-Path ([System.IO.Path]::GetTempPath()) ("ckb-sync-send-{0}.err" -f ([guid]::NewGuid().ToString("N")))
+    # Start-Process with redirected streams can lose ExitCode on Windows
+    # PowerShell 5.1 (PowerShell/PowerShell#5421). Own the process directly so
+    # a successful send is recorded instead of retried every collection cycle.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $exe
+    $startInfo.Arguments = ($processArgs | ForEach-Object { '"{0}"' -f $_ }) -join " "
+    $startInfo.WorkingDirectory = (Get-Location).Path
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    # sendMsg.py prints Chinese after delivery. A redirected stream must not
+    # raise an encoding error after Discord has already accepted the message.
+    $startInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8"
+    $startInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $startInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $process = $null
 
     try {
-        $process = Start-Process -FilePath $exe `
-            -ArgumentList $processArgs `
-            -WorkingDirectory (Get-Location).Path `
-            -RedirectStandardOutput $outFile `
-            -RedirectStandardError $errFile `
-            -WindowStyle Hidden `
-            -PassThru
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+        # Drain both streams while waiting, including when Python writes more
+        # than a pipe buffer. Reading them sequentially can deadlock the sender.
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
 
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            $process.Kill()
+            $process.WaitForExit()
             Write-Warning "sendMsg.py timed out after $TimeoutSeconds seconds"
             return $false
         }
 
-        if (Test-Path -LiteralPath $outFile) {
-            Get-Content -LiteralPath $outFile | ForEach-Object {
-                if (-not [string]::IsNullOrWhiteSpace($_)) {
-                    Write-Host "sendMsg: $_"
-                }
+        foreach ($line in ($stdout.Result -split '\r?\n')) {
+            if (-not [string]::IsNullOrWhiteSpace($line)) {
+                Write-Host "sendMsg: $line"
             }
         }
 
-        if (Test-Path -LiteralPath $errFile) {
-            Get-Content -LiteralPath $errFile | ForEach-Object {
-                if (-not [string]::IsNullOrWhiteSpace($_)) {
-                    Write-Warning "sendMsg: $_"
-                }
+        foreach ($line in ($stderr.Result -split '\r?\n')) {
+            if (-not [string]::IsNullOrWhiteSpace($line)) {
+                Write-Warning "sendMsg: $line"
             }
         }
 
-        if ($process.ExitCode -ne 0) {
-            Write-Warning "sendMsg.py exited with code $($process.ExitCode)"
+        $exitCode = $process.ExitCode
+        if ($null -eq $exitCode -or $exitCode -ne 0) {
+            Write-Warning "sendMsg.py did not succeed (exit code: '$exitCode')"
             return $false
         }
 
@@ -407,7 +418,9 @@ function Invoke-SendMessage {
         return $false
     }
     finally {
-        Remove-Item -LiteralPath $outFile, $errFile -Force -ErrorAction SilentlyContinue
+        if ($process) {
+            $process.Dispose()
+        }
     }
 }
 
@@ -462,38 +475,59 @@ function Complete-PostKillActions {
         [string]$MetricsHost
     )
 
-    $escapedNet = [regex]::Escape($Net)
-    Ensure-GrafanaLink -Net $Net -LogPath $LogPath -MetricsPort $MetricsPort -MetricsHost $MetricsHost
-
-    $content = Get-Content -LiteralPath $LogPath -Raw
-    $envReady = $false
-
-    if ($content -match "(?m)^$escapedNet env_switched:") {
-        $envReady = $true
+    # Serialize the marker check, send and marker write across collectors.
+    # Keep the lock file: deleting it after release could race another owner.
+    # The OS releases the handle even if the collector is terminated.
+    try {
+        $reportLock = [System.IO.File]::Open(
+            "$LogPath.report.lock",
+            [System.IO.FileMode]::OpenOrCreate,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None
+        )
     }
-    else {
-        $expectedMode = Get-ExpectedMode -Net $Net -LogPath $LogPath
-        $newState = Switch-EnvFile -ExpectedMode $expectedMode
-        if ($newState) {
-            Add-Content -LiteralPath $LogPath -Value "$Net env_switched: $(Get-NowText) (mode: $($newState.Mode), is_exec: $($newState.IsExec))"
+    catch [System.IO.IOException] {
+        Write-Warning "Cannot acquire report lock for '$LogPath'; skip this collection. $($_.Exception.Message)"
+        return
+    }
+
+    try {
+        # A failed state write must stop finalization, not silently carry on.
+        $ErrorActionPreference = "Stop"
+        $escapedNet = [regex]::Escape($Net)
+        $content = Get-Content -LiteralPath $LogPath -Raw
+        if ($content -match "(?m)^$escapedNet report_sent:") {
+            return
+        }
+
+        Ensure-GrafanaLink -Net $Net -LogPath $LogPath -MetricsPort $MetricsPort -MetricsHost $MetricsHost
+        $envReady = $false
+
+        if ($content -match "(?m)^$escapedNet env_switched:") {
             $envReady = $true
         }
-    }
+        else {
+            $expectedMode = Get-ExpectedMode -Net $Net -LogPath $LogPath
+            $newState = Switch-EnvFile -ExpectedMode $expectedMode
+            if ($newState) {
+                Add-Content -LiteralPath $LogPath -Value "$Net env_switched: $(Get-NowText) (mode: $($newState.Mode), is_exec: $($newState.IsExec))"
+                $envReady = $true
+            }
+        }
 
-    if (-not $envReady) {
-        return
-    }
+        if (-not $envReady) {
+            return
+        }
 
-    $content = Get-Content -LiteralPath $LogPath -Raw
-    if ($content -match "(?m)^$escapedNet report_sent:") {
-        return
+        if (Invoke-SendMessage -LogPath $LogPath) {
+            Add-Content -LiteralPath $LogPath -Value "$Net report_sent: $(Get-NowText)"
+        }
+        else {
+            Write-Warning "Report is complete and env.txt was advanced, but sendMsg.py did not complete successfully."
+        }
     }
-
-    if (Invoke-SendMessage -LogPath $LogPath) {
-        Add-Content -LiteralPath $LogPath -Value "$Net report_sent: $(Get-NowText)"
-    }
-    else {
-        Write-Warning "Report is complete and env.txt was advanced, but sendMsg.py did not complete successfully."
+    finally {
+        $reportLock.Dispose()
     }
 }
 

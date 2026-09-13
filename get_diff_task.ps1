@@ -107,14 +107,15 @@ try {
         $scriptArgs.MetricsHost = $MetricsHost
     }
 
-    $output = & (Join-Path $scriptDir "get_diff.ps1") @scriptArgs 2>&1
-    foreach ($line in $output) {
-        Write-TaskLog "$line"
+    # Sender diagnostics use Write-Host and Write-Warning. Capture all streams
+    # as they arrive so a timeout or exception does not discard earlier output.
+    & (Join-Path $scriptDir "get_diff.ps1") @scriptArgs *>&1 | ForEach-Object {
+        Write-TaskLog "$_"
     }
 
     $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
     Write-TaskLog "done exit=$exitCode"
-    exit 0
+    exit $exitCode
 }
 catch {
     Write-TaskLog "error: $($_.Exception.Message)"
