@@ -6,6 +6,17 @@
 10,30,50 * * * * cd /home/ckb/scz/ckb-sync && sudo bash get_diff.sh >> get_diff.log 2>&1
 ```
 
+## Manual Linux restart
+```bash
+bash restart_mainnet.sh      # Normal restart.
+bash restart_mainnet.sh 0    # Restart with --assume-valid-target set to 0x + 64 zeros.
+bash restart_testnet.sh      # Normal testnet restart.
+bash restart_testnet.sh 0    # Testnet restart with the same zero target.
+```
+The scripts print `./ckb --version` and the full `ckb run` command before launching.
+They reuse the existing node directory and data. Exactly one matching network
+node directory must exist alongside the scripts.
+
 ## Windows rough version
 ```powershell
 # Start mainnet, without restart report.
