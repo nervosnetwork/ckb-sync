@@ -1,0 +1,7 @@
+# Copy to memory_watch.conf on the Linux test host. This file is sourced by bash.
+# Default: enabled for Linux sync/restart entry points.
+CKB_MEMORY_WATCH_ENABLED=1
+CKB_MEMORY_WATCH_INTERVAL=5
+CKB_MEMORY_WATCH_KEEP_BOOTS=3
+# Default is diagnostics/memory-watch/ alongside the scripts.
+# CKB_MEMORY_WATCH_DIR=/home/ckb/scz/ckb-sync/diagnostics/memory-watch

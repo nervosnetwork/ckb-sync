@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Keep one host-wide recorder running across CKB restarts and test rounds.
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+if ! bash "$SCRIPT_DIR/memory_watch.sh" start; then
+    echo "[WARN] Host memory recording is unavailable; continuing the sync test." >&2
+fi
+
 PORT_MAINNET=8114
 PORT_TESTNET=8124
 

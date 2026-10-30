@@ -11,3 +11,8 @@ kubernetes/Dockerfile
 .env
 .restart_timeout_env
 .without_restart_env
+
+# Persistent local diagnostics and host-specific collector settings.
+/diagnostics/
+/memory_watch.conf
+__pycache__/

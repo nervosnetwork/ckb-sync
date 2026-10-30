@@ -6,6 +6,12 @@ if [[ $# -gt 1 || ( $# -eq 1 && $1 != 0 ) ]]; then
     echo "用法: bash restart_mainnet.sh [0]" >&2
     exit 1
 fi
+# Keep one host-wide recorder running across CKB restarts and test rounds.
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+if ! bash "$SCRIPT_DIR/memory_watch.sh" start; then
+    echo "[WARN] Host memory recording is unavailable; continuing the sync test." >&2
+fi
+
 CMD=(./ckb run)
 if [[ ${1:-} == 0 ]]; then
     CMD+=(--assume-valid-target 0x0000000000000000000000000000000000000000000000000000000000000000)
