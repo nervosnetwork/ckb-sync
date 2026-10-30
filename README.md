@@ -1,32 +1,10 @@
 ## Usage
 ```bash
 # Start or restart ckb every two hours.
-20 */2 * * * cd /home/ckb/scz/ckb-sync && sudo bash run.sh >> run.log 2>&1
+20 */2 * * * cd /home/ckb/scz/ckb-sync && sudo bash sync.sh >> sync.log 2>&1
 # Statistics are collected every 20 minutes.
 10,30,50 * * * * cd /home/ckb/scz/ckb-sync && sudo bash get_diff.sh >> get_diff.log 2>&1
 ```
-
-## Linux host memory recording
-
-Linux `run.sh`, `sync.sh`, and manual restart scripts ensure one host-wide memory
-recorder is running. It samples all user processes every 5 seconds, including
-anonymous RSS, process identity, cgroup, and I/O. Logs are kept on disk under
-`diagnostics/memory-watch/`, outside the CKB directories recreated for each test.
-Each machine boot has a separate log directory; the newest three boots are kept,
-with about 256 MiB per boot. Recorder failures produce a warning and do not stop
-the sync test. The recorder continues across CKB restarts and completed rounds;
-stop it explicitly when testing is finished.
-
-```bash
-sudo bash memory_watch.sh start   # Also attach to an already-running sync test.
-sudo bash memory_watch.sh status
-sudo bash memory_watch.sh stop
-```
-
-Copy `memory_watch.conf.example` to `memory_watch.conf` to change the sampling
-interval, retention, output directory, or disable automatic starts. Configuration
-changes take effect after stop/start. See [memory recording](docs/memory-watch.md)
-for validation, crash recovery, export commands, and measurement limitations.
 
 ## Manual Linux restart
 ```bash

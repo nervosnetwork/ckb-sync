@@ -17,12 +17,6 @@ if [[ "$RESTART_FLAG" != "0" && "$RESTART_FLAG" != "1" ]]; then
 	exit 1
 fi
 
-# Keep one host-wide recorder running across CKB restarts and test rounds.
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-if ! bash "$SCRIPT_DIR/memory_watch.sh" start; then
-    echo "[WARN] Host memory recording is unavailable; continuing the sync test." >&2
-fi
-
 # 0x0000000000000000000000000000000000000000000000000000000000000000
 ckb_version_prefix="v0.210"
 mainnet_assume_valid_target=""
